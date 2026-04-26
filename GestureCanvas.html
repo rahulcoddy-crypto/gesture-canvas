@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>GestureCanvas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050810; overflow: hidden; font-family: monospace; }
+    #root { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+
+    video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0.85;
+    }
+    canvas {
+      position: absolute; inset: 0;
+      pointer-events: none;
+    }
+    #overlayCanvas { z-index: 5; }
+    #hudCanvas { z-index: 10; }
+
+    /* HUD */
+    #hud {
+      position: absolute; top: 12px; left: 12px; z-index: 20;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .panel {
+      background: rgba(5,8,16,0.78);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 14px;
+      padding: 12px 14px;
+    }
+    .panel-title {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.15em;
+      color: #3b82f6; text-transform: uppercase;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    #statusDot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #ef4444; transition: background 0.3s;
+    }
+    #statusDot.live { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .label { font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 2px; }
+    #tvCoords { font-size: 20px; font-weight: 700; color: white; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .col .val { font-size: 15px; font-weight: 700; }
+    #tvQuadrant { color: #60a5fa; }
+    #tvStrokes { color: #34d399; }
+    #tvGesture {
+      font-size: 11px; color: rgba(255,255,255,0.85);
+      background: rgba(255,255,255,0.07);
+      border-radius: 8px; padding: 5px 8px; text-align: center;
+    }
+
+    /* Controls */
+    #controls {
+      position: absolute; top: 12px; right: 12px; z-index: 20;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    }
+    .ctrl-title {
+      font-size: 9px; color: rgba(255,255,255,0.35);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      text-align: center; margin-bottom: 6px;
+    }
+    .mode-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.6);
+      border-radius: 8px; padding: 7px 12px;
+      font-size: 12px; font-family: monospace;
+      cursor: pointer; width: 115px;
+      transition: all 0.15s;
+    }
+    .mode-btn.active {
+      border-color: var(--ac);
+      color: var(--ac);
+      background: rgba(59,130,246,0.1);
+    }
+    .color-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 6px;
+    }
+    .color-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid transparent; cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-dot.active { border-color: white; transform: scale(1.2); }
+
+    .action-btn {
+      width: 115px; padding: 8px; border-radius: 9px;
+      font-size: 12px; font-family: monospace; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #btnUndo {
+      background: rgba(5,8,16,0.75);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+    }
+    #btnClear {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.35);
+      color: #ef4444;
+    }
+
+    /* Brush slider */
+    #brushSlider { width: 100%; accent-color: #3b82f6; cursor: pointer; }
+
+    /* Bottom bar */
+    #bottomBar {
+      position: absolute; bottom: 18px;
+      left: 50%; transform: translateX(-50%);
+      z-index: 20;
+      background: rgba(5,8,16,0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 999px;
+      padding: 8px 22px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    #pingDot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #facc15;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    #instrText {
+      font-size: 10px; color: rgba(255,255,255,0.7);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Loading */
+    #loading {
+      position: absolute; inset: 0; z-index: 50;
+      background: #050810;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+    }
+    #spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(59,130,246,0.25);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    #loadText { font-size: 12px; color: rgba(255,255,255,0.45); letter-spacing: 0.1em; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  </style>
+</head>
+<body>
+<div id="root">
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="overlayCanvas"></canvas>
+  <canvas id="hudCanvas"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="panel" style="min-width:190px">
+      <div class="panel-title">
+        Gesture Canvas
+        <span style="display:flex;align-items:center;gap:5px;font-size:9px">
+          <div id="statusDot"></div>
+          <span id="statusTxt" style="color:#ef4444">OFFLINE</span>
+        </span>
+      </div>
+      <div class="label">Position</div>
+      <div id="tvCoords">(0, 0)</div>
+      <div class="row">
+        <div class="col"><div class="label">Quadrant</div><div class="val" id="tvQuadrant" style="color:#60a5fa">—</div></div>
+        <div class="col"><div class="label">Strokes</div><div class="val" id="tvStrokes" style="color:#34d399">0</div></div>
+      </div>
+      <div id="tvGesture">No hand detected</div>
+    </div>
+
+    <div class="panel">
+      <div class="label" style="margin-bottom:6px" id="brushLabel">Brush Size · 6px</div>
+      <input type="range" id="brushSlider" min="2" max="24" value="6" />
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <div class="panel" style="padding:10px">
+      <div class="ctrl-title">Mode</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <button class="mode-btn active" data-mode="freehand" style="--ac:#3b82f6">〜 Draw</button>
+        <button class="mode-btn" data-mode="line" style="--ac:#3b82f6">╱ Line</button>
+        <button class="mode-btn" data-mode="circle" style="--ac:#3b82f6">○ Circle</button>
+        <button class="mode-btn" data-mode="erase" style="--ac:#ef4444">◌ Erase</button>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:10px">
+      <div class="ctrl-title">Color</div>
+      <div class="color-grid" id="colorGrid"></div>
+    </div>
+
+    <button class="action-btn" id="btnUndo">↩ Undo</button>
+    <button class="action-btn" id="btnClear">✕ Clear</button>
+  </div>
+
+  <!-- Bottom -->
+  <div id="bottomBar">
+    <div id="pingDot"></div>
+    <span id="instrText">Pinch thumb + index to draw</span>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div id="spinner"></div>
+    <div id="loadText">LOADING HAND TRACKING AI…</div>
+  </div>
+</div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const COLORS = ['#3b82f6','#f43f5e','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+const MODES  = { freehand:'〜 Draw', line:'╱ Line', circle:'○ Circle', erase:'◌ Erase' };
+const INSTRS = {
+  freehand: 'PINCH TO DRAW FREELY',
+  line:     'PINCH START → RELEASE FOR LINE',
+  circle:   'PINCH CENTER → RELEASE FOR CIRCLE',
+  erase:    'PINCH TO ERASE'
+};
+
+let activeMode  = 'freehand';
+let activeColor = '#3b82f6';
+let strokeWidth = 6;
+let strokeCount = 0;
+let wasPinching = false;
+let isDrawing   = false;
+let shapeStart  = null;
+let freehandPath = [];
+let history     = [];
+
+// Elements
+const video      = document.getElementById('video');
+const overlayC   = document.getElementById('overlayCanvas');
+const hudC       = document.getElementById('hudCanvas');
+const overlayCtx = overlayC.getContext('2d');
+const hudCtx     = hudC.getContext('2d');
+
+function resize() {
+  overlayC.width = hudC.width = window.innerWidth;
+  overlayC.height = hudC.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Color grid ──────────────────────────────────────────────────────────────
+const colorGrid = document.getElementById('colorGrid');
+COLORS.forEach((c, i) => {
+  const d = document.createElement('div');
+  d.className = 'color-dot' + (i === 0 ? ' active' : '');
+  d.style.background = c;
+  d.onclick = () => {
+    activeColor = c;
+    document.getElementById('brushSlider').style.accentColor = c;
+    colorGrid.querySelectorAll('.color-dot').forEach(x => x.classList.remove('active'));
+    d.classList.add('active');
+  };
+  colorGrid.appendChild(d);
+});
+
+// ── Mode buttons ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.onclick = () => {
+    activeMode = btn.dataset.mode;
+    shapeStart = null; freehandPath = [];
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('instrText').textContent = INSTRS[activeMode];
+  };
+});
+
+// ── Brush slider ─────────────────────────────────────────────────────────────
+document.getElementById('brushSlider').oninput = e => {
+  strokeWidth = +e.target.value;
+  document.getElementById('brushLabel').textContent = `Brush Size · ${strokeWidth}px`;
+};
+
+// ── Undo / Clear ─────────────────────────────────────────────────────────────
+document.getElementById('btnUndo').onclick = () => {
+  if (!history.length) return;
+  const prev = history.pop();
+  const img = new Image();
+  img.onload = () => {
+    overlayCtx.clearRect(0, 0, overlayC.width, overlayC.height);
+    overlayCtx.drawImage(img, 0, 0);
+  };
+  img.src = prev;
+};
+document.getElementById('btnClear').onclick = () => {
+  saveSnapshot();
+  overlayCtx.clearRect(0, 0, overlayC.width, overlayC.height);
+};
+
+function saveSnapshot() {
+  history.push(overlayC.toDataURL());
+  if (history.length > 10) history.shift();
+}
+
+// ── Grid / quadrant background ───────────────────────────────────────────────
+function drawGrid(ctx, w, h) {
+  const mx = w/2, my = h/2;
+  [[mx,0,mx,my,'rgba(74,222,128,0.04)'],[0,0,mx,my,'rgba(96,165,250,0.04)'],
+   [0,my,mx,my,'rgba(248,113,113,0.04)'],[mx,my,mx,my,'rgba(251,191,36,0.04)']
+  ].forEach(([x,y,ww,hh,col]) => { ctx.fillStyle=col; ctx.fillRect(x,y,ww,hh); });
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(mx,0); ctx.lineTo(mx,h);
+  ctx.moveTo(0,my); ctx.lineTo(w,my);
+  ctx.stroke();
+}
+
+// ── Cursor ───────────────────────────────────────────────────────────────────
+function drawCursor(ctx, x, y, active) {
+  const col  = active ? activeColor : 'rgba(255,255,255,0.85)';
+  const rad  = active ? 14 : 26;
+  ctx.strokeStyle = col;
+  ctx.lineWidth   = active ? 3.5 : 2;
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.stroke();
+  if (active) {
+    ctx.fillStyle = col; ctx.globalAlpha = 0.25;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  // crosshair
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5;
+  const off = rad + 7;
+  ctx.beginPath();
+  ctx.moveTo(x-off,y); ctx.lineTo(x-rad+3,y);
+  ctx.moveTo(x+rad-3,y); ctx.lineTo(x+off,y);
+  ctx.moveTo(x,y-off); ctx.lineTo(x,y-rad+3);
+  ctx.moveTo(x,y+rad-3); ctx.lineTo(x,y+off);
+  ctx.stroke();
+}
+
+// ── Shape preview ────────────────────────────────────────────────────────────
+function drawPreview(ctx, sx, sy) {
+  if (!shapeStart || !isDrawing) return;
+  const {sx:ax, sy:ay} = shapeStart;
+  ctx.save();
+  ctx.strokeStyle  = activeColor;
+  ctx.lineWidth    = strokeWidth;
+  ctx.globalAlpha  = 0.65;
+  ctx.setLineDash([8, 6]);
+  ctx.lineCap = 'round';
+  if (activeMode === 'line') {
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(sx,sy); ctx.stroke();
+  } else if (activeMode === 'circle') {
+    const r = Math.hypot(sx-ax, sy-ay);
+    ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = activeColor;
+  ctx.beginPath(); ctx.arc(ax, ay, 7, 0, Math.PI*2); ctx.fill();
+}
+
+// ── Gesture detection ─────────────────────────────────────────────────────────
+function detectGesture(lm) {
+  const tips  = [8,12,16,20];
+  const bases = [6,10,14,18];
+  const extended = tips.filter((_,i) => lm[tips[i]].y < lm[bases[i]].y);
+  const dist = Math.hypot(lm[8].x-lm[4].x, lm[8].y-lm[4].y);
+  if (dist < 0.06) return 'pinch';
+  if (extended.length === 4) return 'open_hand';
+  if (extended.length === 1 && extended[0]===8) return 'pointing';
+  if (extended.length === 2 && extended.includes(8) && extended.includes(12)) return 'peace';
+  return 'fist';
+}
+const gestureNames = { pinch:'✦ Drawing', open_hand:'✋ Open Hand', pointing:'☝ Pointing', peace:'✌ Peace', fist:'✊ Fist' };
+
+// ── Handle MediaPipe results ──────────────────────────────────────────────────
+function handleResults(results) {
+  const w = hudC.width, h = hudC.height;
+  hudCtx.clearRect(0,0,w,h);
+  drawGrid(hudCtx, w, h);
+
+  if (!results.multiHandLandmarks?.length) {
+    document.getElementById('tvGesture').textContent = 'No hand detected';
+    wasPinching = false; isDrawing = false;
+    return;
+  }
+
+  const lm = results.multiHandLandmarks[0];
+  const sx = (1 - lm[8].x) * w;  // mirrored
+  const sy = lm[8].y * h;
+  const cx = Math.round(sx - w/2);
+  const cy = Math.round(h/2 - sy);
+
+  const gesture  = detectGesture(lm);
+  const pinching = gesture === 'pinch';
+
+  // HUD text
+  document.getElementById('tvCoords').textContent  = `(${cx}, ${cy})`;
+  document.getElementById('tvGesture').textContent = gestureNames[gesture] || gesture;
+  const q = cx>0&&cy>0?'I':cx<0&&cy>0?'II':cx<0&&cy<0?'III':cx>0&&cy<0?'IV':'—';
+  document.getElementById('tvQuadrant').textContent = q;
+
+  // Drawing logic
+  if (pinching && !wasPinching) {
+    saveSnapshot();
+    isDrawing = true;
+    strokeCount++;
+    document.getElementById('tvStrokes').textContent = strokeCount;
+    if (activeMode === 'freehand' || activeMode === 'erase') {
+      freehandPath = [{sx, sy}];
+    } else {
+      shapeStart = {sx, sy};
+    }
+  }
+
+  if (pinching && isDrawing) {
+    if (activeMode === 'freehand') {
+      if (freehandPath.length >= 1) {
+        const prev = freehandPath[freehandPath.length-1];
+        overlayCtx.lineCap = overlayCtx.lineJoin = 'round';
+        overlayCtx.lineWidth   = strokeWidth;
+        overlayCtx.strokeStyle = activeColor;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(prev.sx, prev.sy);
+        overlayCtx.lineTo(sx, sy);
+        overlayCtx.stroke();
+        freehandPath.push({sx, sy});
+      }
+    } else if (activeMode === 'erase') {
+      if (freehandPath.length >= 1) {
+        const prev = freehandPath[freehandPath.length-1];
+        overlayCtx.save();
+        overlayCtx.globalCompositeOperation = 'destination-out';
+        overlayCtx.lineWidth = 50; overlayCtx.lineCap = 'round';
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(prev.sx, prev.sy);
+        overlayCtx.lineTo(sx, sy);
+        overlayCtx.stroke();
+        overlayCtx.restore();
+        freehandPath.push({sx, sy});
+      }
+    }
+  }
+
+  if (!pinching && wasPinching && isDrawing) {
+    if (activeMode === 'line' && shapeStart) {
+      overlayCtx.strokeStyle = activeColor;
+      overlayCtx.lineWidth   = strokeWidth;
+      overlayCtx.lineCap     = 'round';
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(shapeStart.sx, shapeStart.sy);
+      overlayCtx.lineTo(sx, sy);
+      overlayCtx.stroke();
+    } else if (activeMode === 'circle' && shapeStart) {
+      const r = Math.hypot(sx-shapeStart.sx, sy-shapeStart.sy);
+      overlayCtx.strokeStyle = activeColor;
+      overlayCtx.lineWidth   = strokeWidth;
+      overlayCtx.beginPath();
+      overlayCtx.arc(shapeStart.sx, shapeStart.sy, r, 0, Math.PI*2);
+      overlayCtx.stroke();
+    }
+    isDrawing  = false;
+    shapeStart = null;
+    freehandPath = [];
+  }
+
+  wasPinching = pinching;
+
+  // Draw live HUD layer
+  drawCursor(hudCtx, sx, sy, pinching);
+  drawPreview(hudCtx, sx, sy);
+}
+
+// ── Start MediaPipe ───────────────────────────────────────────────────────────
+async function init() {
+  const hands = new window.Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  hands.setOptions({
+    maxNumHands: 1, modelComplexity: 1,
+    minDetectionConfidence: 0.65, minTrackingConfidence: 0.65
+  });
+  hands.onResults(handleResults);
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: 1280, height: 720 }
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('statusDot').classList.add('live');
+    document.getElementById('statusTxt').style.color = '#22c55e';
+    document.getElementById('statusTxt').textContent  = 'LIVE';
+
+    const camera = new window.Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); },
+      width: 1280, height: 720
+    });
+    camera.start();
+  } catch (e) {
+    document.getElementById('loadText').textContent = '⚠ Camera access denied. Please allow camera and reload.';
+    document.getElementById('spinner').style.display = 'none';
+  }
+}
+
+// Wait for MediaPipe scripts to load then init
+window.addEventListener('load', () => {
+  const check = setInterval(() => {
+    if (window.Hands && window.Camera) {
+      clearInterval(check);
+      init();
+    }
+  }, 100);
+});
+</script>
+</body>
+</html>
